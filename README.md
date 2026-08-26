@@ -1,3 +1,4 @@
+## 🔍 Overview
 # PAVE: Prior-Aware Verifier Evaluation
 
 **PAVE** is an evaluation framework for diagnosing how large language model (LLM) verifiers arbitrate between their **parametric knowledge** and **external evidence** under **prior-context discrepancy (PCD)**.
