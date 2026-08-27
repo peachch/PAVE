@@ -14,20 +14,6 @@ Repeated prior-only predictions are further used to characterize the verifier's 
 
 ---
 
-## 🌟 Key Features
-
-* **Prior-aware evaluation**: explicitly measures a verifier's prediction before external evidence is introduced.
-* **Correction and persistence analysis**: distinguishes desirable evidence following from undesirable susceptibility to misleading evidence.
-* **Knowledge-state partitioning**: separates examples into **Known** and **Unknown** states based on consistency across repeated prior-only runs.
-* **Two counterfactual interventions**:
-
-  * **Counter-Entity** modifies judgment-relevant entities while preserving the overall evidence structure.
-  * **Counter-Semantic** generates evidence supporting the opposite verdict.
-* **Multi-run evaluation**: supports repeated stochastic evaluation and aggregation across runs.
-* **Provider-independent model interface**: supports OpenAI and other OpenAI-compatible APIs through a shared request interface.
-* **Offline smoke testing**: includes a mock LLM mode for testing the complete pipeline without API access.
-
----
 
 ## 📂 Repository Structure
 
