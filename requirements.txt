@@ -1,6 +1,10 @@
-# Every model is reached through one OpenAI-compatible client, so no
-# provider-specific SDK is needed. For a local model, point OPENAI_BASE_URL at
-# the server's OpenAI-compatible endpoint (e.g. http://localhost:11434/v1).
+# Core PAVE model interface
 openai>=1.0
-pandas>=1.3      # only for counter.py --dump-csv
+
+# Benchmark construction / tabular export
+pandas>=1.3
 tqdm
+
+# Wikipedia temporal crawl + evidence retrieval
+requests>=2.31
+beautifulsoup4>=4.12
