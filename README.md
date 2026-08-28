@@ -211,10 +211,10 @@ See [`evaluate_temporal_correction_only/README.md`](evaluate_temporal_correction
 If you use PAVE in your research, please cite:
 
 ```bibtex
-@inproceedings{sun2026pave,
-  title     = {Diagnosing LLM Arbitration Behavior over Pre-evidence Epistemic States in RAG-based Fact-Checking},
-  author    = {Sun, Yuxi and Shang, Wenbo and Gao, Wei and Huang, Xin and Ma, Jing},
-  booktitle = {EMNLP},
-  year      = {2026}
+@article{sun2026diagnosing,
+  title={Diagnosing LLM Arbitration Behavior over Pre-evidence Epistemic States in RAG-based Fact-Checking},
+  author={Sun, Yuxi and Shang, Wenbo and Gao, Wei and Huang, Xin and Ma, Jing},
+  journal={arXiv preprint arXiv:2606.01120},
+  year={2026}
 }
 ```
