@@ -207,19 +207,19 @@ def choose_gold_evidence(
         return "", "", 0.0
 
     candidates.sort(reverse=True, key=lambda item: item[0])
-    best_score, _, best_url = candidates[0]
+    _, _, best_url = candidates[0]
     same_page = [item for item in candidates if item[2] == best_url]
-    selected = [
-        item for item in same_page if item[0] >= 0.5 * best_score
-    ][: max(1, top_k)] or [candidates[0]]
+    selected = same_page[: max(1, top_k)] or [candidates[0]]
     return "\n".join(item[1] for item in selected), best_url, selected[0][0]
 
 
-def parse_support_refute(text: str) -> str:
+def parse_validation_label(text: str) -> str:
     normalized = re.sub(r"[^a-z]", "", (text or "").lower())
-    if normalized.startswith("support") or normalized == "true":
+    if normalized.startswith("support"):
         return "support"
-    if normalized.startswith("refute") or normalized == "false":
+    if normalized.startswith("insufficient"):
+        return "insufficient"
+    if normalized.startswith("refute"):
         return "refute"
     return ""
 
@@ -230,14 +230,18 @@ def validate_gold_evidence(
     model: str,
     max_tokens: int | None,
     extra_body: dict | None,
-) -> bool:
+) -> str:
     prompt = (
-        "Judge whether the evidence supports the claim. "
-        "Return exactly one label: support or refute.\n\n"
+        "Judge the relationship between the evidence and the claim.\n"
+        "Return exactly one label: support, insufficient, or refute.\n"
+        "support: the evidence is sufficient to establish the main factual content of the claim.\n"
+        "insufficient: the evidence may be related or partially supportive, but does not establish the claimed fact or event.\n"
+        "refute: the evidence contradicts a material part of the claim.\n"
+        "Do not treat topic or entity overlap alone as support.\n\n"
         f"Claim:\n{claim}\n\nEvidence:\n{evidence}\n\nLabel:"
     )
     raw = llm_request(prompt, model, 0.0, max_tokens, extra_body)
-    return parse_support_refute(raw) == "support"
+    return parse_validation_label(raw)
 
 
 def record_id(event_date: str, claim: str) -> str:
@@ -331,20 +335,21 @@ def main() -> int:
             except requests.RequestException as exc:
                 LOG.debug("failed candidate %s: %s", url, exc)
 
-        gold, source_url, score = choose_gold_evidence(
+        gold, source_url, retrieval_score = choose_gold_evidence(
             claim, pages, args.top_k, args.max_paragraphs
         )
         if not gold:
             stats["no_gold_evidence"] += 1
             continue
-        if score < args.min_score:
+        if retrieval_score < args.min_score:
             stats["low_relevance"] += 1
             continue
 
         try:
-            if not validate_gold_evidence(
+            validation_label = validate_gold_evidence(
                 claim, gold, args.validator_model, args.max_tokens, extra_body
-            ):
+            )
+            if validation_label != "support":
                 stats["gold_validation_failed"] += 1
                 continue
         except Exception as exc:
@@ -367,7 +372,8 @@ def main() -> int:
                 "event_date": event_date,
                 "category": record.get("category") or "",
                 "source_url": source_url,
-                "gold_relevance_score": round(score, 6),
+                "retrieval_score": round(retrieval_score, 6),
+                "validator_model": args.validator_model,
             }
         )
         stats["kept"] += 1
