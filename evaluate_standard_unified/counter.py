@@ -142,16 +142,43 @@ def split_entities(raw, separator):
     return entities
 
 
-def substitute_entities(evidence, mapping):
-    if not mapping:
-        return evidence
-    keys = sorted(mapping, key=len, reverse=True)
-    pattern = re.compile(
-        "|".join(r"(?<!\w)" + re.escape(key) + r"(?!\w)" for key in keys),
-        re.IGNORECASE,
-    )
-    lowered = {key.lower(): value for key, value in mapping.items()}
-    return pattern.sub(lambda match: lowered.get(match.group(0).lower(), match.group(0)), evidence)
+def parse_entity_replacements(raw):
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+    left, right = raw.find("["), raw.rfind("]")
+    if left < 0 or right < left:
+        return []
+    try:
+        data = json.loads(raw[left : right + 1])
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+
+    pairs = []
+    for item in data:
+        if not isinstance(item, dict):
+            return []
+        original = item.get("original")
+        replacement = item.get("replacement")
+        if not isinstance(original, str) or not isinstance(replacement, str):
+            return []
+        original = original.strip()
+        replacement = replacement.strip()
+        if not original or not replacement:
+            return []
+        pairs.append((original, replacement))
+    return pairs
+
+
+def substitute_entities(evidence, replacements):
+    mapping = dict(replacements)
+    pattern = re.compile("|".join(re.escape(original) for original in sorted(mapping, key=len, reverse=True)))
+    return pattern.sub(lambda match: mapping[match.group(0)], evidence)
 
 
 def entity_counter(
@@ -165,62 +192,52 @@ def entity_counter(
     min_entities,
     separator,
 ):
-    format_instruction = (
-        "Return a comma-separated list only."
-        if separator == "comma"
-        else "Return one entity per line only."
+    prompt = (
+        f"Select exactly {min_entities} distinct named entities or concrete values from the evidence "
+        "that are directly relevant to judging the claim, and provide one counterfactual replacement "
+        "for each. You are selecting replacement strings only; do not rewrite the evidence.\n\n"
+        "Hard constraints:\n"
+        "1. Each `original` must be copied exactly and case-sensitively from the evidence.\n"
+        "2. Select only a named entity or concrete value, such as a person, organization, location, "
+        "date/time, age, number/quantity, disease, product, or event name. Do not select ordinary words "
+        "or arbitrary phrases.\n"
+        "3. Each `replacement` must be a plausible drop-in alternative of the same fine-grained semantic "
+        "type and contextual role as its `original` (e.g., country -> country, person -> person, "
+        "year -> year, quantity -> quantity).\n"
+        "4. The replacement must fit directly into the original span without requiring any change to "
+        "surrounding text.\n"
+        "5. Do not return overlapping or nested originals. Do not return the same original twice.\n"
+        "6. The replacement must differ from the original and must contain only the replacement string, "
+        "with no arrows, explanations, labels, or before/after notation.\n\n"
+        "Return JSON only in exactly this form:\n"
+        '[{"original":"...","replacement":"..."}]\n\n'
+        f"Claim: {claim}\n"
+        f"Evidence: {evidence}\n"
+        "Replacements:"
     )
-    extraction_prompt = (
-        f"Extract exactly {min_entities} distinct named entities or concrete values from the evidence "
-        "that are directly relevant to judging the claim. Each item must be an exact span copied from "
-        "the evidence. Do not return overlapping or nested spans. "
-        f"{format_instruction}\n\nClaim: {claim}\nEvidence: {evidence}\nEntities:"
-    )
-    raw_entities = api.ask(
-        extraction_prompt, model, temperature, max_tokens, extra_body
-    )
-    entities = split_entities(raw_entities, separator)
-
-    selected = []
-    for entity in entities:
-        if not re.search(r"(?<!\w)" + re.escape(entity) + r"(?!\w)", evidence, re.IGNORECASE):
-            continue
-        if any(
-            entity.lower() in other.lower() or other.lower() in entity.lower()
-            for other in selected
-        ):
-            continue
-        selected.append(entity)
-        if len(selected) == min_entities:
-            break
-    if len(selected) != min_entities:
+    raw = api.ask(prompt, model, temperature, max_tokens, extra_body)
+    replacements = parse_entity_replacements(raw)
+    if len(replacements) != min_entities:
         return ""
 
-    mapping = {}
-    for entity in selected:
-        replacement_prompt = (
-            "Replace the following entity/value with a plausible drop-in replacement of the same "
-            "fine-grained semantic type and the same contextual role. For example: state -> state, "
-            "country -> country, person -> person, organization -> organization, disease -> disease, "
-            "date/year -> date/year, age -> age, number -> number. The replacement must fit directly "
-            "into the original text without requiring any change to surrounding words. Output only the "
-            "replacement span; do not rewrite or explain anything else.\n\n"
-            f"Claim: {claim}\n"
-            f"Evidence: {evidence}\n"
-            f"Entity: {entity}\nReplacement:"
-        )
-        replacement = api.ask(
-            replacement_prompt, model, temperature, max_tokens, extra_body
-        ).strip().strip('"“”')
-        if (
-            not replacement
-            or "\n" in replacement
-            or replacement.lower() == entity.lower()
+    originals = []
+    validated = []
+    for original, replacement in replacements:
+        if original not in evidence:
+            return ""
+        if original == replacement:
+            return ""
+        if any(mark in replacement for mark in ("->", "→", "=>", "\n", "\r")):
+            return ""
+        if any(
+            original in other or other in original
+            for other in originals
         ):
             return ""
-        mapping[entity] = replacement
+        originals.append(original)
+        validated.append((original, replacement))
 
-    counter = substitute_entities(evidence, mapping)
+    counter = substitute_entities(evidence, validated)
     return counter if counter != evidence else ""
 
 
